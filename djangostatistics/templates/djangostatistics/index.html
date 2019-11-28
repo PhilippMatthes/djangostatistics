@@ -1,0 +1,253 @@
+{% load staticfiles %}
+
+{% if user and user.is_superuser or user.is_staff %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="">
+  <meta name="author" content="Philipp Matthes, template based on the work of Mark Otto, Jacob Thornton, and Bootstrap contributors">
+
+  <title>{% block title_head %}Statistics{% endblock %}</title>
+
+  <link rel="stylesheet" type="text/css" href="{% static 'djangostatistics/vendor/css/bootstrap.4.4.min.css' %}">
+  <link rel="stylesheet" type="text/css" href="{% static 'djangostatistics/vendor/css/statistics.css' %}">
+
+  {% block extrahead %}{% endblock %}
+</head>
+
+<body>
+
+<nav class="navbar navbar-dark fixed-top bg-dark flex-md-nowrap p-0 shadow">
+  {% block brand %}
+  <a class="navbar-brand col-sm-3 col-md-2 mr-0" href="#">Statistics</a>
+  {% endblock %}
+  <div class="btn-toolbar dropleft mb-2 mb-md-0 mr-3">
+    <select id="date-span-select" class="form-control">
+      <option value="7">Last 7 days</option>
+      <option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option>
+      <option value="365">Last 365 days</option>
+    </select>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+      <div class="sidebar-sticky">
+        <ul class="nav flex-column">
+          <h6 class="sidebar-heading d-flex justify-content-between
+                     align-items-center px-3 mt-4 pb-3 text-success">
+            {% if user.is_superuser %}
+            <span>Logged in as Superuser</span>
+            {% elif user.is_staff %}
+            <span>Logged in as Staffmember</span>
+            {% endif %}
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-users"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          </h6>
+          {% for counted_interaction_type in counted_interaction_types %}
+          <li class="nav-item d-flex justify-content-between pr-3 bg-light
+                     {% if forloop.first %}border-top{% endif %} border-bottom border-right">
+            <a data-interaction-type="{{ counted_interaction_type.interaction_type }}"
+               class="interaction-type-link nav-link
+                      {% if forloop.first %}active{% endif %}"
+               href="#">
+              {{ counted_interaction_type.interaction_type }}
+            </a>
+            <div class="d-flex align-items-center">
+              <div class="badge badge-primary badge-pill">
+                {{ counted_interaction_type.count }}
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </nav>
+
+    <main role="main" class="col-md-9 ml-sm-auto col-lg-10 px-4">
+      <canvas class="mt-3" id="chart" width="400" height="200"></canvas>
+    </main>
+  </div>
+</div>
+
+<script src="{% static 'djangostatistics/vendor/js/jquery.min.js' %}"></script>
+<script src="{% static 'djangostatistics/vendor/js/bootstrap.4.4.min.js' %}"></script>
+<script src="{% static 'djangostatistics/vendor/js/moment.min.js' %}"></script>
+<script src="{% static 'djangostatistics/vendor/js/Chart.min.js' %}"></script>
+
+<script>
+  window.state = {
+    "selectedDays": 7,
+
+    {% for counted_interaction_type in counted_interaction_types %}
+    {% if forloop.first %}
+    "selectedInteractionType": "{{ counted_interaction_type.interaction_type }}",
+    {% endif %}
+    {% endfor %}
+  };
+
+  window.displayInteractions = function(interactions, steps, fromDate, toDate) {
+    const interactionDates = interactions
+      .map(interaction => (new Date(interaction.timestamp)).getTime())
+      .sort(function(a, b) {
+        if (a > b) return 1;
+        if (a < b) return -1;
+        return 0;
+      });
+
+    const timeDifference = toDate.getTime() - fromDate.getTime();
+    const stepSize = Math.floor(timeDifference / steps);
+
+    const stepDates = [];
+    for (let time = fromDate.getTime(); time <= toDate.getTime(); time += stepSize) {
+      stepDates.push(time);
+    }
+
+    const mappedDates = {};
+    for (const stepDate of stepDates) {
+      mappedDates[stepDate] = 0;
+    }
+    for (const interactionDate of interactionDates) {
+      const delta = interactionDate - fromDate.getTime();
+      const mappedDate = fromDate.getTime() + (delta - (delta % stepSize));
+      mappedDates[mappedDate] += 1;
+    }
+
+    const chartData = [];
+    for (const key in mappedDates) {
+      if (!mappedDates.hasOwnProperty(key)) continue;
+      chartData.push({
+        t: new Date(parseInt(key)), y: mappedDates[key]
+      });
+    }
+
+    let timeUnit = "day";
+    if (fromDate.plusDays(100) <= toDate) {
+      // toggle month ticks when the time span is more than 100 days
+      timeUnit = "month";
+    }
+
+    new Chart("chart", {
+      data: {
+        datasets: [{
+          label: "Interactions",
+          data: chartData,
+          type: "line",
+          borderColor: "#007bff",
+          backgroundColor: "rgba(56, 103, 214, 0.2)",
+          lineTension: 0
+        }]
+      },
+      options: {
+        scales: {
+          xAxes: [{
+            type: "time",
+            time: {
+              unit: timeUnit
+            },
+            distribution: "linear"
+          }],
+          yAxes: [{
+            gridLines: {
+              drawBorder: false
+            }
+          }]
+        }
+      }
+    });
+  };
+
+  Date.prototype.plusDays = function(days) {
+    return new Date(this.getTime() + (days * 24 * 60 * 60 * 1000));
+  };
+
+  Date.prototype.minusDays = function(days) {
+    return this.plusDays(-days);
+  };
+
+  Date.prototype.startOfDay = function() {
+    return new Date(
+      this.getFullYear(),
+      this.getMonth(),
+      this.getDate(),
+      0, 0, 0
+    );
+  };
+
+  Date.prototype.endOfDay = function() {
+    return new Date(
+      this.getFullYear(),
+      this.getMonth(),
+      this.getDate(),
+      23, 59, 59
+    );
+  };
+
+  window.loadChart = function() {
+    const fromDate = new Date().minusDays(window.state.selectedDays).startOfDay();
+    const toDate = new Date().endOfDay();
+
+    const steps = 50;
+
+    const request = new XMLHttpRequest();
+    request.open(
+      "POST",
+      window.location.origin + window.location.pathname + "interactions/",
+      true
+    );
+    request.setRequestHeader("Content-type", "application/json");
+    request.setRequestHeader("X-CSRFToken", "{{ csrf_token }}");
+    request.addEventListener("load", function() {
+      if (request.status !== 200) {
+        console.error("Statistics load failed.");
+        return
+      }
+      const data = JSON.parse(request.response);
+      const interactions = data.interactions;
+      window.displayInteractions(interactions, steps, fromDate, toDate);
+    });
+    const data = JSON.stringify({
+      interaction_type: window.state.selectedInteractionType,
+      from_timestamp: fromDate.toISOString(),
+      to_timestamp: toDate.toISOString()
+    });
+    request.send(data);
+  };
+
+  for (const element of document.getElementsByClassName("interaction-type-link")) {
+    element.onclick = function() {
+      const interactionType = element.getAttribute("data-interaction-type");
+      for (const e of document.getElementsByClassName("interaction-type-link")) {
+        if (e.getAttribute("data-interaction-type") === interactionType) {
+          e.classList.add("active");
+        } else {
+          e.classList.remove("active");
+        }
+      }
+      window.state.selectedInteractionType = interactionType;
+      window.loadChart();
+    };
+  }
+
+  window.dateSpanSelect = document.getElementById("date-span-select");
+  window.dateSpanSelect.onchange = function() {
+    const selectedIndex = window.dateSpanSelect.selectedIndex;
+    const selectedDays = window.dateSpanSelect.options[selectedIndex].value;
+    window.state.selectedDays = parseInt(selectedDays);
+    window.loadChart();
+  };
+
+  window.loadChart();
+</script>
+
+{% block extrabody %}{% endblock %}
+
+</body>
+
+</html>
+{% else %}
+You are not allowed to watch this page.
+{% endif %}
