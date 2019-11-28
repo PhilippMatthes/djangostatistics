@@ -32,7 +32,7 @@ urlpatterns = [
 
 5. Use the `@new_interaction("Example Interaction")` decorator to declare functions that should be logged as an "Example Interaction". Here is an example:
 
-```
+```python
 @new_interaction("Index Page Visit")
 def index(request):
     # ...
